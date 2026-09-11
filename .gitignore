@@ -1,0 +1,10 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.log
+
+# Scratch files that shouldn't be committed from the root
+*_tmp.sql
+*.tmp
+
+# Each app manages its own node_modules/dist/.env — see backend/.gitignore and frontend/.gitignore

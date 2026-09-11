@@ -1,0 +1,181 @@
+Untuk Claude Code, jangan paste seluruh Developer Pack sekaligus.
+
+Gunakan urutan berikut:
+
+Langkah 1 (Paling Penting)
+
+
+
+Project Overview:
+
+Platform Name:
+Jofran Smart Learning
+
+Target Users:
+- Students Grade 1-6
+- Parents
+- Teachers
+- Principals
+- School Administrators
+- Super Administrators
+
+Target Country:
+Timor-Leste
+
+Supported Languages:
+- Tetum
+- English
+- Bahasa Indonesia
+
+Tech Stack:
+
+Frontend:
+- Next.js 15
+- TypeScript
+- Tailwind CSS
+- ShadCN UI
+
+Backend:
+- NestJS
+- PostgreSQL
+- Prisma ORM
+- Redis
+- BullMQ
+- WebSocket
+
+Authentication:
+- JWT
+- Refresh Token
+- Google Login
+- Microsoft Login
+
+Storage:
+-
+
+Langkah 2
+
+Setelah Claude selesai Architecture:
+
+Paste Prompt Backend
+Build the complete backend implementation based on the approved architecture.
+
+Stack:
+NestJS
+PostgreSQL
+Prisma
+Redis
+BullMQ
+JWT
+GraphQL
+REST API
+
+Generate:
+
+- Monorepo backend structure
+- Prisma schema
+- Authentication module
+- RBAC
+- Users module
+- Schools module
+- Student module
+- Parent module
+- Teacher module
+- Academic module
+- Quiz module
+- Report module
+- Notification module
+
+Output production-ready code.
+
+Langkah 3
+
+Paste Prompt Frontend
+Build the complete frontend implementation based on the approved architecture.
+
+Stack:
+
+- Next.js 15
+- TypeScript
+- Tailwind CSS
+- ShadCN UI
+- Zustand
+- Recharts
+- Framer Motion
+
+Brand:
+
+Primary #062D89
+Secondary #0C6EFF
+Accent #11D5E8
+
+Generate:
+
+- App Router Structure
+- Design System
+- Student Dashboard
+- Parent Dashboard
+- Teacher Dashboard
+- Principal Dashboard
+- Authentication Pages
+- Landing Page
+- Learning Pages
+- Report Pages
+
+Output production-ready code.
+
+Langkah 4
+
+Paste Prompt AI
+Build the complete AI architecture for Jofran Smart Learning.
+
+Provider:
+OpenAI
+
+Models:
+
+GPT-5 Mini
+GPT-5
+GPT-4o Mini TTS
+GPT-4o Transcribe
+
+Features:
+
+AI Teacher Jojo
+Reading Assistant
+Writing Assistant
+Listening Assistant
+Speaking Assistant
+Adaptive Learning
+Story Generator
+Quiz Generator
+Assessment Engine
+Parent Report Generator
+
+Generate:
+
+- AI Service Layer
+- Prompt Templates
+- OpenAI Integration
+- RAG Architecture
+- Memory System
+- Cost Optimization
+- NestJS Services
+
+Output production-ready code.
+
+Langkah 5 (Terakhir)
+
+Paste Developer Pack sebagai konteks tambahan:
+Use the following PRD as the source of truth.
+
+[Paste seluruh Developer Pack di sini]
+
+Rekomendasi Terbaik
+
+Urutan ideal:
+1. Architecture
+2. Database
+3. Backend
+4. Frontend
+5. AI
+6. Developer Pack (reference)

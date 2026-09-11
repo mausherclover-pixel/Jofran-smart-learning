@@ -1,0 +1,586 @@
+// Jofran Smart Learning — Prisma schema
+// Every tenant-owned model carries schoolId (directly or one join away).
+// Every content model carries locale variants as rows, never a JSON blob.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  SUPER_ADMIN
+  SCHOOL_ADMIN
+  PRINCIPAL
+  TEACHER
+  PARENT
+  STUDENT
+}
+
+enum Locale {
+  TET
+  EN
+  ID
+}
+
+enum SchoolPlan {
+  PILOT
+  STANDARD
+  DISTRICT
+}
+
+enum AuthProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum GradedBy {
+  AUTO
+  AI
+  TEACHER
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  GRADING
+  GRADED
+}
+
+enum AssessmentType {
+  QUIZ
+  TEST
+  HOMEWORK
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  SHORT_ANSWER
+  CONSTRUCTED_RESPONSE
+  SPEAKING
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+enum MessageThreadType {
+  TEACHER_PARENT
+  ANNOUNCEMENT
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy & identity
+// ---------------------------------------------------------------------------
+
+model School {
+  id           String     @id @default(cuid())
+  name         String
+  municipality String // e.g. Dili, Baucau, Ermera
+  plan         SchoolPlan @default(PILOT)
+  timezone     String     @default("Asia/Dili")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  users            User[]
+  classes          Class[]
+  academicTerms    AcademicTerm[]
+  auditLogs        AuditLog[]
+  announcements    MessageThread[]
+
+  @@map("schools")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  role          Role
+  schoolId      String? // null only for SUPER_ADMIN
+  school        School?  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  fullName      String
+  username      String?  @unique // school-issued login for students
+  email         String?  @unique // required for staff/parents, optional for students
+  passwordHash  String? // argon2id; null for OAuth-only accounts
+  locale        Locale   @default(TET)
+  isActive      Boolean  @default(true)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  identities        UserIdentity[]
+  refreshTokens     RefreshToken[]
+
+  // STUDENT
+  guardians         Guardianship[]       @relation("StudentGuardians")
+  enrollments       Enrollment[]
+  attempts          Attempt[]
+  progressRecords   ProgressRecord[]
+  studentBadges     StudentBadge[]
+  aiConversations   AiConversation[]
+  progressReports   ProgressReport[]
+  aiUsageLogs       AiUsageLog[]
+
+  // PARENT
+  guardianOf        Guardianship[]       @relation("ParentGuardianOf")
+
+  // TEACHER
+  classesTeaching   Class[]              @relation("ClassTeacher")
+  assessmentsAuthored Assessment[]       @relation("AssessmentAuthor")
+
+  sentMessages      Message[]            @relation("MessageSender")
+  threadParticipants ThreadParticipant[]
+  auditLogEntries   AuditLog[]           @relation("AuditActor")
+
+  @@index([schoolId, role])
+  @@map("users")
+}
+
+model UserIdentity {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       AuthProvider
+  providerId     String // subject/id returned by the OAuth provider
+  email          String?
+  createdAt      DateTime     @default(now())
+
+  @@unique([provider, providerId])
+  @@map("user_identities")
+}
+
+model RefreshToken {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique // sha256 of the raw refresh token
+  familyId    String // shared by a chain of rotated tokens; reuse revokes the whole family
+  revokedAt   DateTime?
+  replacedBy  String? // id of the token that rotated this one out
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  ip          String?
+  userAgent   String?
+
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+// PARENT (guardian) <-> STUDENT link. A parent's scope is the union of these.
+model Guardianship {
+  id         String   @id @default(cuid())
+  parentId   String
+  parent     User     @relation("ParentGuardianOf", fields: [parentId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    User     @relation("StudentGuardians", fields: [studentId], references: [id], onDelete: Cascade)
+  relation   String   @default("parent") // parent, guardian, caregiver
+  createdAt  DateTime @default(now())
+
+  @@unique([parentId, studentId])
+  @@map("guardianships")
+}
+
+// ---------------------------------------------------------------------------
+// Academic structure
+// ---------------------------------------------------------------------------
+
+model AcademicTerm {
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  year      Int // e.g. 2026
+  name      String // "Term 1"
+  startsOn  DateTime
+  endsOn    DateTime
+
+  classes   Class[]
+
+  @@unique([schoolId, year, name])
+  @@map("academic_terms")
+}
+
+model Class {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicTermId String
+  academicTerm   AcademicTerm @relation(fields: [academicTermId], references: [id], onDelete: Cascade)
+  grade          Int // 1–6
+  name           String // "Grade 3 - Kamelia"
+  teacherId      String?
+  teacher        User?        @relation("ClassTeacher", fields: [teacherId], references: [id])
+
+  enrollments    Enrollment[]
+  assessments    Assessment[]
+
+  @@index([schoolId, grade])
+  @@map("classes")
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([classId, studentId])
+  @@map("enrollments")
+}
+
+model Subject {
+  id     String  @id @default(cuid())
+  slug   String  @unique // "math", "tetum-literacy", "science"
+  grade  Int // 1–6
+
+  units  CurriculumUnit[]
+  skills Skill[]
+
+  @@map("subjects")
+}
+
+model Skill {
+  id        String           @id @default(cuid())
+  subjectId String
+  subject   Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  code      String // "add-2digit", "reading-comprehension-l2"
+  name      String
+
+  progress  ProgressRecord[]
+  questions Question[]
+
+  @@unique([subjectId, code])
+  @@map("skills")
+}
+
+model CurriculumUnit {
+  id         String   @id @default(cuid())
+  subjectId  String
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  order      Int
+  slug       String
+
+  lessons    Lesson[]
+
+  @@unique([subjectId, slug])
+  @@map("curriculum_units")
+}
+
+model Lesson {
+  id        String          @id @default(cuid())
+  unitId    String
+  unit      CurriculumUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  order     Int
+  published Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  variants  LessonLocale[]
+  assessments Assessment[]
+
+  @@map("lessons")
+}
+
+// One row per locale — a missing translation is a query result, not a runtime fallback.
+model LessonLocale {
+  id           String   @id @default(cuid())
+  lessonId     String
+  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  locale       Locale
+  title        String
+  bodyMarkdown String
+  mediaKeys    String[] // S3 object keys under curriculum/{grade}/{subject}/{lessonId}/
+  aiDrafted    Boolean  @default(false) // true until a human curriculum editor approves it
+  reviewedAt   DateTime?
+  reviewedById String?
+
+  @@unique([lessonId, locale])
+  @@map("lesson_locales")
+}
+
+// ---------------------------------------------------------------------------
+// Assessments & attempts
+// ---------------------------------------------------------------------------
+
+model Assessment {
+  id         String         @id @default(cuid())
+  classId    String
+  class      Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
+  lessonId   String?
+  lesson     Lesson?        @relation(fields: [lessonId], references: [id])
+  authorId   String
+  author     User           @relation("AssessmentAuthor", fields: [authorId], references: [id])
+  type       AssessmentType @default(QUIZ)
+  title      String
+  dueAt      DateTime?
+  publishedAt DateTime?
+  createdAt  DateTime       @default(now())
+
+  questions  Question[]
+  attempts   Attempt[]
+
+  @@index([classId])
+  @@map("assessments")
+}
+
+model Question {
+  id            String       @id @default(cuid())
+  assessmentId  String
+  assessment    Assessment   @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  skillId       String?
+  skill         Skill?       @relation(fields: [skillId], references: [id])
+  order         Int
+  type          QuestionType
+  promptMarkdown String
+  choices       Json? // [{ id, label }] for MULTIPLE_CHOICE
+  correctAnswer Json? // shape depends on `type`
+  rubric        String? // grading rubric, used for CONSTRUCTED_RESPONSE / SPEAKING
+  points        Int          @default(1)
+
+  responses     AttemptResponse[]
+
+  @@map("questions")
+}
+
+model Attempt {
+  id           String        @id @default(cuid())
+  assessmentId String
+  assessment   Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status       AttemptStatus @default(IN_PROGRESS)
+  score        Float?
+  maxScore     Float?
+  gradedBy     GradedBy?
+  aiFeedback   String? // set by the ai-grading worker, in the student's locale
+  startedAt    DateTime      @default(now())
+  submittedAt  DateTime?
+  gradedAt     DateTime?
+
+  responses    AttemptResponse[]
+
+  @@index([studentId])
+  @@index([assessmentId])
+  @@map("attempts")
+}
+
+model AttemptResponse {
+  id         String   @id @default(cuid())
+  attemptId  String
+  attempt    Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answer     Json
+  isCorrect  Boolean?
+  score      Float?
+  aiFeedback String?
+
+  @@unique([attemptId, questionId])
+  @@map("attempt_responses")
+}
+
+// Per-skill mastery, exponentially weighted over Attempts. Drives adaptive difficulty.
+model ProgressRecord {
+  id        String   @id @default(cuid())
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  skillId   String
+  skill     Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  mastery   Float    @default(0) // 0.0–1.0
+  attempts  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, skillId])
+  @@map("progress_records")
+}
+
+model Badge {
+  id          String         @id @default(cuid())
+  code        String         @unique
+  name        String
+  description String
+  iconKey     String // S3 key under avatars/badges/
+
+  awards      StudentBadge[]
+
+  @@map("badges")
+}
+
+model StudentBadge {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  badgeId    String
+  badge      Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  awardedAt  DateTime @default(now())
+
+  @@unique([studentId, badgeId])
+  @@map("student_badges")
+}
+
+// ---------------------------------------------------------------------------
+// AI Teacher Jojo — logged, reviewable, never private from a guardian/teacher
+// ---------------------------------------------------------------------------
+
+model AiConversation {
+  id         String    @id @default(cuid())
+  studentId  String
+  student    User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lessonId   String? // scopes Jojo's context to one lesson's objectives
+  locale     Locale
+  // Rolling memory (architecture §11 "memory system"): once the raw
+  // transcript grows past the context window budget, older turns are
+  // folded into this summary rather than sent verbatim on every call.
+  // Nothing is ever deleted from AiMessage — this only shrinks what's
+  // replayed to the model, never what a guardian/teacher can read.
+  summary    String?
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+
+  messages   AiMessage[]
+
+  @@index([studentId])
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String // "student" | "jojo"
+  content        String
+  model          String? // e.g. "gpt-5-mini", set on jojo messages
+  createdAt      DateTime       @default(now())
+
+  @@map("ai_messages")
+}
+
+// Every OpenAI call, across every feature, logs one row here — the
+// cost-optimization half of architecture §11 needs real numbers to route
+// on, not just a routing table on paper.
+model AiUsageLog {
+  id               String   @id @default(cuid())
+  userId           String?
+  user             User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  feature          String // "jojo-chat" | "jojo-tts" | "jojo-transcribe" | "ai-grading" | "story-generator" | "quiz-generator" | "report-narrative"
+  model            String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  estimatedCostUsd Float    @default(0)
+  createdAt        DateTime @default(now())
+
+  @@index([feature, createdAt])
+  @@index([userId, createdAt])
+  @@map("ai_usage_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Messaging & notifications
+// ---------------------------------------------------------------------------
+
+model MessageThread {
+  id        String              @id @default(cuid())
+  schoolId  String
+  school    School              @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  type      MessageThreadType   @default(TEACHER_PARENT)
+  subject   String
+
+  participants ThreadParticipant[]
+  messages     Message[]
+
+  @@index([schoolId])
+  @@map("message_threads")
+}
+
+model ThreadParticipant {
+  id        String        @id @default(cuid())
+  threadId  String
+  thread    MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
+  @@map("thread_participants")
+}
+
+model Message {
+  id        String        @id @default(cuid())
+  threadId  String
+  thread    MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User          @relation("MessageSender", fields: [senderId], references: [id])
+  body      String
+  createdAt DateTime      @default(now())
+
+  @@index([threadId])
+  @@map("messages")
+}
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String
+  channel   NotificationChannel
+  status    NotificationStatus  @default(QUEUED)
+  templateKey String
+  payload   Json
+  locale    Locale
+  createdAt DateTime            @default(now())
+  sentAt    DateTime?
+  readAt    DateTime?
+
+  @@index([userId, status])
+  @@map("notifications")
+}
+
+// Compiled by the report-generation queue (architecture §09) — one row per
+// student per period. `s3Key` is null until the render step uploads the PDF;
+// `summary` is queryable immediately, which is what the parent dashboard reads.
+model ProgressReport {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  periodStart  DateTime
+  periodEnd    DateTime
+  summary      Json // { bySkill: [{ skillId, name, mastery }], attemptsCompleted, averageScore } — deterministic, no AI call
+  narrative    String? // one-paragraph write-up in the parent's locale — the only AI-generated part (Parent Report Generator, §11)
+  s3Key        String?
+  generatedAt  DateTime @default(now())
+
+  @@unique([studentId, periodStart, periodEnd])
+  @@map("progress_reports")
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  schoolId   String?
+  school     School?  @relation(fields: [schoolId], references: [id])
+  actorId    String
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id])
+  action     String // "GRADE_OVERRIDE" | "IMPERSONATE" | "DATA_EXPORT" | ...
+  targetType String
+  targetId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([schoolId, createdAt])
+  @@map("audit_logs")
+}
