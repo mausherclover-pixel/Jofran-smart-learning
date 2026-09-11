@@ -8,3 +8,6 @@ Thumbs.db
 *.tmp
 
 # Each app manages its own node_modules/dist/.env — see backend/.gitignore and frontend/.gitignore
+
+# Claude Code harness state (not project source)
+/.claude/

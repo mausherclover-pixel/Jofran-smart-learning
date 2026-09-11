@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 import {
   QUEUE_AI_GRADING,
   QUEUE_CACHE_INVALIDATION,
@@ -18,7 +19,13 @@ import {
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        connection: { url: config.get<string>('redis.url') },
+        // BullMQ's blocking commands (BRPOPLPUSH and friends) must never
+        // time out via ioredis's own retry limit — maxRetriesPerRequest:
+        // null makes ioredis retry quietly in the background instead of
+        // throwing an uncaught MaxRetriesPerRequestError that kills the
+        // whole process the moment Redis is briefly unreachable. Same
+        // setting RedisModule already uses for the app's own client.
+        connection: new Redis(config.get<string>('redis.url')!, { maxRetriesPerRequest: null }),
       }),
     }),
     BullModule.registerQueue(

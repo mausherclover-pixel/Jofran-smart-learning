@@ -17,7 +17,9 @@ export class RedisIoAdapter extends IoAdapter {
 
   async connectToRedis(): Promise<void> {
     const config = this.app.get(ConfigService);
-    const pubClient = new Redis(config.get<string>('redis.url')!);
+    // Same reasoning as QueueModule: never let ioredis's retry limit throw
+    // an uncaught error and take the whole process down over a Redis blip.
+    const pubClient = new Redis(config.get<string>('redis.url')!, { maxRetriesPerRequest: null });
     const subClient = pubClient.duplicate();
     this.adapterConstructor = createAdapter(pubClient, subClient);
   }
